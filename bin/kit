@@ -1,0 +1,180 @@
+#!/bin/sh
+#
+# Copyright (c) 2013-2016 Alimy
+#
+# [Alimy](http://alimy.me)
+#
+
+OPTIONS_SPEC="\
+kit command [options] <repos>
+-- 
+ Available Command
+convert 'convert repositories'
+sync    'synchronise repositories'
+gc      'Git GC'
+--
+ Available Options
+--mirror      'signed mirror repositories for <convert>'
+--bare      'signed bare repositories for <convert,sync>'
+--normal    'signed normal repositories for <sync>'
+"
+
+usage () {
+    echo "$OPTIONS_SPEC"   
+}
+
+_convert_bare () {
+    REPOS=$@
+    OUT=./.out
+
+    [ -d $OUT ] || mkdir -p -v $OUT
+
+    for r in $REPOS
+    do
+        name=$(basename $r)
+        repository=$(dirname $r)/$name
+        url=$(git --git-dir=$repository/.git config --get remote.origin.url)
+        echo "Convert: $repository ..."
+        git clone --verbose --mirror $repository $OUT/$name.git
+        git --git-dir=$OUT/$name.git config remote.origin.url $url
+        git --git-dir=$OUT/$name.git gc
+        echo ""
+    done
+}
+
+_convert_mirror () {
+     REPOS=$@
+     
+     for r in $REPOS
+     do
+	repository=$(dirname $r)/$(basename $r)
+	echo "Convert[bare->mirror]: $repository ..."
+	git --git-dir=$r config remote.origin.fetch "+refs/*:refs/*"
+	git --git-dir=$r config remote.origin.mirror true
+     done
+}
+
+_sync_normal () {
+    REPOS=$@
+    CWD=$(pwd)
+    echo "PWD=$PWD"
+    for r in $REPOS
+    do
+        # Make a abstracture path of repository
+        path=$(dirname $r)
+        [ ${path:0:1} != '/' ] && path=$CWD/$path
+        repository=$path/$(basename $r)
+        echo "Synchronise: $repository ..."
+        cd $repository
+        git pull
+        echo ""
+    done
+}
+
+_sync_bare () {
+    REPOS=$@
+    for r in $REPOS
+    do
+        repository=$(dirname $r)/$(basename $r)
+        echo "Synchronise: $repository ..."
+        git --git-dir=$repository fetch --tags
+        echo ""
+    done
+}
+
+_gc_bare () {
+    REPOS=$@
+    for r in $REPOS
+    do
+        repository=$(dirname $r)/$(basename $r)
+        echo "Git GC: $repository ..."
+        git --git-dir=$repository gc
+        echo ""
+    done
+}
+
+_gc_normal () {
+    REPOS=$@
+    CWD=$(pwd)
+    echo "PWD=$PWD"
+    for r in $REPOS
+    do
+        # Make a abstracture path of repository
+        path=$(dirname $r)
+        [ ${path:0:1} != '/' ] && path=$CWD/$path
+        repository=$path/$(basename $r)
+        echo "Git GC: $repository ..."
+        cd $repository
+        git gc
+        echo ""
+    done
+}
+
+kit_convert () {
+    case $1 in
+        --bare)
+            shift
+            _convert_bare $@
+            ;;
+	--mirror)
+	    shift
+	    _convert_mirror $@
+            ;;
+        *)
+            usage
+            exit 1
+            ;;
+    esac
+}
+
+kit_sync () {
+    case $1 in
+        --bare)
+            shift
+            _sync_bare $@
+            ;;
+        --normal)
+            shift
+            _sync_normal $@
+            ;;
+        *)
+            usage
+            exit 1
+            ;;
+    esac
+}
+
+kit_gc () {
+    case $1 in
+        --bare)
+            shift
+            _gc_bare $@
+            ;;
+        --normal)
+            shift
+            _gc_normal $@
+            ;;
+        *)
+            usage
+            exit 1
+            ;;
+    esac
+}
+
+action=$1
+shift
+case $action in
+    convert)
+        kit_convert $@
+        ;;
+    sync)
+        kit_sync $@
+        ;;
+    gc)
+        kit_gc $@
+        ;;
+    help|*)
+        usage
+        exit 1
+        ;;
+esac
